@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: Simple Cast Bar
+## Notes: A simplified cast bar addon for detecting important spells
+## Author: YourName
+## Version: 1.0
+## SavedVariables: SimpleCastBarDB
+
+SimpleCastBar.lua
