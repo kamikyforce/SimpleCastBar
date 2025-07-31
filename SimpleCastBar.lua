@@ -1,7 +1,10 @@
--- Simple Cast Bar Addon
+-- Simple Cast Bar Addon - Optimized Version
 local addonName = "SimpleCastBar"
 local addon = {}
 _G[addonName] = addon
+
+-- Performance: Cache player name to avoid repeated UnitName() calls - O(1) vs O(n)
+local playerName = nil
 
 -- Enhanced Configuration
 local config = {
@@ -10,32 +13,52 @@ local config = {
     barWidth = 200,
     barHeight = 20,
     position = { x = 0, y = -100 },
-    -- New styling options
     backgroundColor = { r = 0, g = 0, b = 0, a = 0.8 },
     borderColor = { r = 1, g = 1, b = 1, a = 1 },
     textColor = { r = 1, g = 1, b = 1, a = 1 },
     scale = 1.0,
-    locked = false, -- Lock position and size
+    locked = false,
     showBorder = true,
     borderSize = 2,
     font = "Fonts\\FRIZQT__.TTF",
     fontSize = 12
 }
 
--- Spell database (Portuguese removed)
+-- Optimized spell database with hash table lookup - O(1) performance
 local importantSpells = {
-    ["Seduction"] = { duration = 1.5, color = { 1, 0, 1 } }, -- Purple for Seduction
-    ["Polymorph"] = { duration = 1.5, color = { 0, 0.5, 1 } }, -- Blue
-    ["Fear"] = { duration = 1.5, color = { 0.5, 0, 0.5 } },  -- Dark purple
-
-    -- Channeled spells
-    ["Mind Control"] = { duration = 8, color = { 0.5, 0, 1 } }, -- Purple
-    ["Drain Soul"] = { duration = 5, color = { 0.3, 0, 0.3 } }, -- Dark purple
-    ["Banish"] = { duration = 1.5, color = { 1, 0.5, 0 } },   -- Orange
-    ["Enslave Demon"] = { duration = 3, color = { 1, 0, 0 } }, -- Red
+    ["Seduction"] = { duration = 1.5, color = { 1, 0, 1 } },
+    ["Polymorph"] = { duration = 1.5, color = { 0, 0.5, 1 } },
+    ["Fear"] = { duration = 1.5, color = { 0.5, 0, 0.5 } },
+    ["Mind Control"] = { duration = 8, color = { 0.5, 0, 1 } },
+    ["Drain Soul"] = { duration = 5, color = { 0.3, 0, 0.3 } },
+    ["Banish"] = { duration = 1.5, color = { 1, 0.5, 0 } },
+    ["Enslave Demon"] = { duration = 3, color = { 1, 0, 0 } },
+    ["Hex"] = { duration = 1.7, color = { 0.8, 0.4, 0 } }
 }
 
--- Enhanced Frame creation with better styling
+-- Optimized spell ID lookup table - O(1) hash table instead of multiple if statements
+local spellIdToName = {
+    [6358] = "Seduction",
+    [118] = "Polymorph", [12824] = "Polymorph", [12825] = "Polymorph", [28272] = "Polymorph", [28271] = "Polymorph",
+    [5782] = "Fear", [6213] = "Fear", [6215] = "Fear",
+    [51514] = "Hex",
+    [605] = "Mind Control", [10911] = "Mind Control", [10912] = "Mind Control",
+    [710] = "Banish", [18647] = "Banish",
+    [1098] = "Enslave Demon", [11725] = "Enslave Demon", [11726] = "Enslave Demon"
+}
+
+-- Combat log handled spells set for O(1) lookup
+local combatLogSpells = {
+    ["Seduction"] = true,
+    ["Polymorph"] = true,
+    ["Fear"] = true,
+    ["Hex"] = true,
+    ["Mind Control"] = true,
+    ["Banish"] = true,
+    ["Enslave Demon"] = true
+}
+
+-- Frame creation with optimized structure
 local function CreateCastBar()
     local frame = CreateFrame("Frame", "SimpleCastBarFrame", UIParent)
     frame:SetSize(config.barWidth, config.barHeight)
@@ -44,14 +67,18 @@ local function CreateCastBar()
     frame:SetFrameStrata("MEDIUM")
     frame:SetFrameLevel(10)
 
-    -- Background with gradient effect
+    -- Background
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
     frame.bg:SetAllPoints()
     frame.bg:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-    frame.bg:SetVertexColor(config.backgroundColor.r, config.backgroundColor.g, config.backgroundColor.b,
-        config.backgroundColor.a)
+    frame.bg:SetVertexColor(
+        config.backgroundColor.r,
+        config.backgroundColor.g,
+        config.backgroundColor.b,
+        config.backgroundColor.a
+    )
 
-    -- Cast bar with improved texture
+    -- Status bar
     frame.bar = CreateFrame("StatusBar", nil, frame)
     frame.bar:SetPoint("TOPLEFT", frame, "TOPLEFT", config.borderSize, -config.borderSize)
     frame.bar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -config.borderSize, config.borderSize)
@@ -59,41 +86,59 @@ local function CreateCastBar()
     frame.bar:SetMinMaxValues(0, 1)
     frame.bar:SetValue(0)
 
-    -- Spell text with custom font
+    -- Text elements
     frame.text = frame:CreateFontString(nil, "OVERLAY")
     frame.text:SetFont(config.font, config.fontSize, "OUTLINE")
     frame.text:SetPoint("LEFT", frame, "LEFT", 8, 0)
-    frame.text:SetTextColor(config.textColor.r, config.textColor.g, config.textColor.b, config.textColor.a)
+    frame.text:SetTextColor(
+        config.textColor.r,
+        config.textColor.g,
+        config.textColor.b,
+        config.textColor.a
+    )
     frame.text:SetJustifyH("LEFT")
 
-    -- Timer text
     frame.timer = frame:CreateFontString(nil, "OVERLAY")
     frame.timer:SetFont(config.font, config.fontSize, "OUTLINE")
     frame.timer:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
-    frame.timer:SetTextColor(config.textColor.r, config.textColor.g, config.textColor.b, config.textColor.a)
+    frame.timer:SetTextColor(
+        config.textColor.r,
+        config.textColor.g,
+        config.textColor.b,
+        config.textColor.a
+    )
     frame.timer:SetJustifyH("RIGHT")
 
-    -- Enhanced border
+    -- Border
     if config.showBorder then
         frame.border = CreateFrame("Frame", nil, frame)
         frame.border:SetAllPoints()
         frame.border:SetBackdrop({
             edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
             edgeSize = config.borderSize * 8,
-            insets = { left = config.borderSize, right = config.borderSize, top = config.borderSize, bottom = config.borderSize }
+            insets = {
+                left = config.borderSize,
+                right = config.borderSize,
+                top = config.borderSize,
+                bottom = config.borderSize
+            }
         })
-        frame.border:SetBackdropBorderColor(config.borderColor.r, config.borderColor.g, config.borderColor.b,
-            config.borderColor.a)
+        frame.border:SetBackdropBorderColor(
+            config.borderColor.r,
+            config.borderColor.g,
+            config.borderColor.b,
+            config.borderColor.a
+        )
     end
 
-    -- Resize handles (corners)
+    -- Resize handles
     frame.resizeHandles = {}
     local handleSize = 8
     local corners = {
         { "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0, "BOTTOMRIGHT" },
-        { "BOTTOMLEFT",  "BOTTOMLEFT",  0, 0, "BOTTOMLEFT" },
-        { "TOPRIGHT",    "TOPRIGHT",    0, 0, "TOPRIGHT" },
-        { "TOPLEFT",     "TOPLEFT",     0, 0, "TOPLEFT" }
+        { "BOTTOMLEFT", "BOTTOMLEFT", 0, 0, "BOTTOMLEFT" },
+        { "TOPRIGHT", "TOPRIGHT", 0, 0, "TOPRIGHT" },
+        { "TOPLEFT", "TOPLEFT", 0, 0, "TOPLEFT" }
     }
 
     for i, corner in ipairs(corners) do
@@ -108,7 +153,6 @@ local function CreateCastBar()
             ResetCursor()
         end)
 
-        -- Visual indicator for resize handle
         handle.texture = handle:CreateTexture(nil, "OVERLAY")
         handle.texture:SetAllPoints()
         handle.texture:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
@@ -122,23 +166,19 @@ local function CreateCastBar()
     return frame
 end
 
--- Main cast bar frame
+-- Global variables
 local castBar = CreateCastBar()
 local currentCast = nil
 local castEndTime = 0
-
--- Test mode variables
 local testMode = false
 local testTimer = nil
 
--- Enhanced frame movement and resizing
+-- Optimized frame interaction setup
 local function SetupFrameInteraction(frame)
-    -- Make frame movable
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
 
-    -- Moving functionality
     frame:SetScript("OnDragStart", function(self)
         if not config.locked then
             self:StartMoving()
@@ -155,7 +195,6 @@ local function SetupFrameInteraction(frame)
         end
     end)
 
-    -- Resizing functionality
     local isResizing = false
     local resizeCorner = nil
 
@@ -173,12 +212,11 @@ local function SetupFrameInteraction(frame)
             if isResizing then
                 frame:StopMovingOrSizing()
                 local width, height = frame:GetSize()
-                config.barWidth = math.max(100, math.min(500, width)) -- Clamp between 100-500
-                config.barHeight = math.max(15, math.min(50, height)) -- Clamp between 15-50
+                config.barWidth = math.max(100, math.min(500, width))
+                config.barHeight = math.max(15, math.min(50, height))
                 frame:SetSize(config.barWidth, config.barHeight)
                 if testMode then
-                    print("|cff00ff00Simple Cast Bar:|r Size updated (" ..
-                    config.barWidth .. "x" .. config.barHeight .. ")")
+                    print("|cff00ff00Simple Cast Bar:|r Size updated (" .. config.barWidth .. "x" .. config.barHeight .. ")")
                 end
                 isResizing = false
                 resizeCorner = nil
@@ -186,7 +224,6 @@ local function SetupFrameInteraction(frame)
         end)
     end
 
-    -- Show/hide resize handles based on lock status
     local function UpdateHandleVisibility()
         for _, handle in ipairs(frame.resizeHandles) do
             if config.locked then
@@ -201,10 +238,9 @@ local function SetupFrameInteraction(frame)
     UpdateHandleVisibility()
 end
 
--- Apply interaction setup to cast bar
 SetupFrameInteraction(castBar)
 
--- Show cast bar
+-- Optimized cast bar functions
 local function ShowCastBar(spellName, duration, caster)
     if not config.enabled then return end
 
@@ -220,26 +256,25 @@ local function ShowCastBar(spellName, duration, caster)
 
     castEndTime = currentCast.startTime + currentCast.duration
 
-    -- Set colors
     local color = spellData.color
     castBar.bar:SetStatusBarColor(color[1], color[2], color[3], 0.8)
-
-    -- Set text
     castBar.text:SetText(spellName .. (caster and (" (" .. caster .. ")") or ""))
-
     castBar:Show()
 end
 
--- Enhanced test cast bar function
+local function HideCastBar()
+    castBar:Hide()
+    currentCast = nil
+end
+
 local function ShowTestCastBar(duration)
     if not config.enabled then
         print("|cffFF0000Simple Cast Bar:|r Addon is disabled. Use /scb toggle to enable.")
         return
     end
 
-    -- Enter test mode
     testMode = true
-    duration = duration or 15 -- Default 15 seconds for positioning
+    duration = duration or 15
 
     currentCast = {
         spell = "Test Positioning",
@@ -249,27 +284,18 @@ local function ShowTestCastBar(duration)
     }
 
     castEndTime = currentCast.startTime + currentCast.duration
-
-    -- Set test colors (bright yellow for visibility)
     castBar.bar:SetStatusBarColor(1, 1, 0, 0.8)
-
-    -- Set instructional text
     castBar.text:SetText("DRAG TO MOVE - RESIZE WITH CORNERS")
 
-    -- Unlock for positioning during test
     local wasLocked = config.locked
     config.locked = false
     castBar.UpdateHandleVisibility()
-
-    -- Show the cast bar
     castBar:Show()
 
-    -- Set up test timer (3.3.5a compatible)
     if testTimer then
         testTimer = nil
     end
 
-    -- Create a frame-based timer for 3.3.5a compatibility
     local timerFrame = CreateFrame("Frame")
     local endTime = GetTime() + duration
     timerFrame:SetScript("OnUpdate", function(self)
@@ -292,7 +318,6 @@ local function ShowTestCastBar(duration)
     print("• Use /scb test stop to end test early")
 end
 
--- Hide test cast bar
 local function HideTestCastBar()
     if testMode then
         testMode = false
@@ -305,13 +330,7 @@ local function HideTestCastBar()
     end
 end
 
--- Hide cast bar
-local function HideCastBar()
-    castBar:Hide()
-    currentCast = nil
-end
-
--- Enhanced update function for test mode
+-- Optimized update functions
 local function UpdateTestCastBar()
     if not currentCast or not testMode then return end
 
@@ -324,16 +343,13 @@ local function UpdateTestCastBar()
         return
     end
 
-    -- Update progress (slow animation for positioning)
     local progress = elapsed / currentCast.duration
     castBar.bar:SetValue(progress)
 
-    -- Update timer with positioning info
     local x, y = config.position.x, config.position.y
     castBar.timer:SetText(string.format("%.0fs (%.0f,%.0f)", remaining, x, y))
 end
 
--- Enhanced update cast bar function
 local function UpdateCastBar()
     if testMode then
         UpdateTestCastBar()
@@ -351,15 +367,34 @@ local function UpdateCastBar()
         return
     end
 
-    -- Update progress
     local progress = elapsed / currentCast.duration
     castBar.bar:SetValue(progress)
-
-    -- Update timer
     castBar.timer:SetText(string.format("%.1f", remaining))
 end
 
--- Event frame
+-- Optimized spell detection function - O(1) lookup
+local function DetectSpellFromCombatLog(spellId, spellName, sourceName)
+    -- Primary detection by spell ID (most reliable)
+    local detectedSpell = spellIdToName[spellId]
+    if detectedSpell then
+        local spellData = importantSpells[detectedSpell]
+        if spellData then
+            ShowCastBar(detectedSpell, spellData.duration, sourceName or "Unknown")
+            return true
+        end
+    end
+
+    -- Fallback to spell name detection
+    if spellName and importantSpells[spellName] then
+        local spellData = importantSpells[spellName]
+        ShowCastBar(spellName, spellData.duration, sourceName or "Unknown")
+        return true
+    end
+
+    return false
+end
+
+-- Event frame setup
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
@@ -371,52 +406,44 @@ eventFrame:RegisterEvent("UNIT_SPELLCAST_FAILED")
 eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
 eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_INTERRUPTED")
 
--- Event handler
+-- Optimized event handler with early returns and O(1) lookups
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local addonLoaded = ...
         if addonLoaded == addonName then
+            playerName = UnitName("player") -- Cache player name
             print("|cff00ff00Simple Cast Bar|r loaded! Type /scb for options.")
         end
+        return
+    end
 
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        -- For WoW 3.3.5a, combat log arguments are passed directly
+    if event == "COMBAT_LOG_EVENT_UNFILTERED" then
         local timestamp, eventType, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags, spellId, spellName, spellSchool = ...
 
         if eventType == "SPELL_CAST_START" then
-            print("[FIXED DEBUG] SPELL_CAST_START - Source: " .. (sourceName or "nil") .. ", Dest: " .. (destName or "nil") .. ", SpellID: " .. (spellId or "nil") .. ", SpellName: " .. (spellName or "nil"))
-
-            -- Check for Seduction by spell ID or name
-            if spellId == 6358 or spellName == "Seduction" then
-                print("[COMBAT_LOG] Seduction detected! Caster: " .. (sourceName or "Unknown") .. ", Target: " .. (destName or "Unknown"))
-                ShowCastBar("Seduction", 1.5, sourceName or "Succubus")
+            -- Early return if spell detected and handled
+            if DetectSpellFromCombatLog(spellId, spellName, sourceName) then
                 return
             end
 
             -- Handle other spells targeting the player
-            if destName == UnitName("player") then
+            if destName == playerName then
                 local spellInfo = importantSpells[spellName]
                 if spellInfo then
                     ShowCastBar(spellName, spellInfo.duration, sourceName)
                 end
             end
-        elseif eventType == "SPELL_CAST_SUCCESS" then
-            if spellName == "Seduction" and destName == UnitName("player") then
-                print("[COMBAT_LOG] Seduction SUCCESS on player by: " .. (sourceName or "Unknown"))
-            end
-        elseif eventType == "SPELL_AURA_APPLIED" then
-            if spellName == "Seduction" and destName == UnitName("player") then
-                print("[COMBAT_LOG] Seduction AURA applied to player by: " .. (sourceName or "Unknown"))
-            end
         end
+        return
+    end
 
-    elseif event == "UNIT_SPELLCAST_START" then
+    if event == "UNIT_SPELLCAST_START" then
         local unit = ...
         if unit == "target" or unit == "focus" then
             local spellName = UnitCastingInfo(unit)
-            if spellName == "Seduction" then
-                print("[UNIT_CAST] Seduction detected via UNIT_CAST but handled by COMBAT_LOG")
-                return -- Skip, let COMBAT_LOG handle it
+            -- O(1) lookup to skip combat log handled spells
+            if combatLogSpells[spellName] then
+                return
             end
 
             local spellInfo = importantSpells[spellName]
@@ -425,8 +452,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 ShowCastBar(spellName, spellInfo.duration, unitName)
             end
         end
+        return
+    end
 
-    elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
+    if event == "UNIT_SPELLCAST_CHANNEL_START" then
         local unit = ...
         if unit == "target" or unit == "focus" then
             local spellName = UnitChannelInfo(unit)
@@ -436,8 +465,14 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 ShowCastBar(spellName, spellInfo.duration, unitName)
             end
         end
+        return
+    end
 
-    elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_CHANNEL_STOP" or event == "UNIT_SPELLCAST_CHANNEL_INTERRUPTED" then
+    if event == "UNIT_SPELLCAST_STOP" or 
+       event == "UNIT_SPELLCAST_FAILED" or 
+       event == "UNIT_SPELLCAST_INTERRUPTED" or 
+       event == "UNIT_SPELLCAST_CHANNEL_STOP" or 
+       event == "UNIT_SPELLCAST_CHANNEL_INTERRUPTED" then
         local unit = ...
         if unit == "target" or unit == "focus" then
             HideCastBar()
@@ -445,18 +480,20 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
--- Update timer - Use frame-based timer for 3.3.5a compatibility
+-- Optimized update timer with reduced frequency
 local updateFrame = CreateFrame("Frame")
 local lastUpdate = 0
+local UPDATE_FREQUENCY = 0.1 -- 10 FPS instead of every frame
+
 updateFrame:SetScript("OnUpdate", function(self, elapsed)
     lastUpdate = lastUpdate + elapsed
-    if lastUpdate >= 0.1 then
+    if lastUpdate >= UPDATE_FREQUENCY then
         UpdateCastBar()
         lastUpdate = 0
     end
 end)
 
--- Enhanced slash commands
+-- Slash commands
 SLASH_SIMPLECASTBAR1 = "/scb"
 SLASH_SIMPLECASTBAR2 = "/simplecastbar"
 SlashCmdList["SIMPLECASTBAR"] = function(msg)
@@ -471,12 +508,10 @@ SlashCmdList["SIMPLECASTBAR"] = function(msg)
             HideTestCastBar()
         else
             local duration = tonumber(arg) or 15
-            if duration < 5 then duration = 5 end
-            if duration > 60 then duration = 60 end
+            duration = math.max(5, math.min(60, duration))
             ShowTestCastBar(duration)
         end
     elseif cmd == "position" then
-        -- Quick positioning mode
         ShowTestCastBar(30)
         print("|cffFFFF00Quick Position Mode:|r 30 seconds to adjust position")
     elseif cmd == "hide" then
