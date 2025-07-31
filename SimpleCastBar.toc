@@ -1,8 +1,8 @@
 ## Interface: 30300
-## Title: Simple Cast Bar
-## Notes: A simplified cast bar addon for detecting important spells
-## Author: Micael Santana
-## Version: 1.0
+## Title: |cff00ff00Simple Cast Bar|r
+## Notes: |cffFFFF00A simplified cast bar addon for detecting important spells|r
+## Author: |cff00ccffMicael Santana|r
+## Version: |cffff8000v1.0|r
 ## SavedVariables: SimpleCastBarDB
 
 SimpleCastBar.lua
