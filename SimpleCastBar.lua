@@ -393,8 +393,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
         
     elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
-        local unit = ...
-        if unit and (string.find(unit, "target") or string.find(unit, "focus")) then
+        local unit, spell = ...
+        if unit and (string.find(unit, "target") or string.find(unit, "focus") or spell == GetSpellInfo(6358)) then
             local spellName
             if event == "UNIT_SPELLCAST_START" then
                 spellName = UnitCastingInfo(unit)
